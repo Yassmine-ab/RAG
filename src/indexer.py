@@ -1,12 +1,49 @@
 import pickle
+import re
 from pathlib import Path
 from tqdm import tqdm
 from rank_bm25 import BM25Okapi
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from src.chunking import chunk_markdown, chunk_python
 from src.models import MinimalSource
 
 MIN_CHUNK_SIZE = 50
+MIN_TOKEN_SIZE = 2
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+")
+_WORD_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+
+
+def _split_identifiers(text: str) -> list[str]:
+    """Split snake_case/camelCase identifiers into lowercase words."""
+    tokens: list[str] = []
+    for raw in _IDENTIFIER_RE.findall(text):
+        for part in raw.split("_"):
+            for word in _WORD_RE.findall(part):
+                token = word.lower()
+                if (
+                    len(token) >= MIN_TOKEN_SIZE
+                    and token not in ENGLISH_STOP_WORDS
+                ):
+                    tokens.append(token)
+    return tokens
+
+
+def tokenize_for_bm25(
+    text: str, file_path: str | None = None
+) -> list[str]:
+    """Tokenize text for BM25, splitting identifiers and dropping stop words.
+
+    A natural-language question uses the words an identifier is made of
+    ("how to load a LoRA adapter" vs `load_lora_adapter`), so identifiers
+    are indexed as separate tokens. The file path is a strong relevance
+    signal for code questions, so it is prepended to the document tokens
+    (never to the query).
+    """
+    tokens = _split_identifiers(text)
+    if file_path is not None:
+        path_tokens = _split_identifiers(file_path.replace("/", " "))
+        tokens = path_tokens + tokens
+    return tokens
 
 
 def _list_source_files(raw_dir: Path) -> list[Path]:
@@ -48,7 +85,9 @@ def _build_index(
         corpus_texts, corpus_sources = _filter_short_chunks(
             corpus_texts, corpus_sources
         )
-        vectorizer = TfidfVectorizer(stop_words="english")
+        vectorizer = TfidfVectorizer(
+            stop_words="english", sublinear_tf=True
+        )
         matrix = vectorizer.fit_transform(corpus_texts)
         return {
             "method": "tfidf",
@@ -56,7 +95,10 @@ def _build_index(
             "matrix": matrix,
             "corpus_sources": corpus_sources,
         }
-    tokenized_corpus = [text.lower().split() for text in corpus_texts]
+    tokenized_corpus = [
+        tokenize_for_bm25(text, file_path=source.file_path)
+        for text, source in zip(corpus_texts, corpus_sources)
+    ]
     bm25 = BM25Okapi(tokenized_corpus)
     return {"method": "bm25", "bm25": bm25, "corpus_sources": corpus_sources}
 

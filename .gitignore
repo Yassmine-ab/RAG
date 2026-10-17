@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated pipeline artifacts
+data/processed/
+data/output/
+
+# Vendored corpus — fetch it with the command from the README (data/raw/vllm-0.10.1)
+data/raw/
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

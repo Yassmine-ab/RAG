@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast job: formatting/typing/unit tests, with no PyTorch (the ~5 GB CUDA
+  # dependencies are only needed for answer generation, which the mock-level
+  # pipeline tests do not exercise).
+  quality:
+    name: Lint, types & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: flake8
+        run: uvx --from "flake8==7.4.1" flake8 src
+
+      - name: mypy
+        run: >
+          uvx --from "mypy==2.3.1" --with "pydantic==2.13.5" mypy src
+          --warn-return-any
+          --warn-unused-ignores
+          --ignore-missing-imports
+          --disallow-untyped-defs
+          --check-untyped-defs
+
+      # Lightweight environment: same versions as uv.lock for the dependencies
+      # used by the tests, without torch/transformers.
+      - name: pytest
+        run: >
+          uv run --no-project --python 3.10
+          --with "pytest==9.1.1"
+          --with "pydantic==2.13.5"
+          --with "scikit-learn==1.7.2"
+          --with "rank-bm25==0.2.2"
+          --with "tqdm==4.70.1"
+          python -m pytest tests -v
+
+  # Manual only (Actions ▸ CI ▸ Run workflow): downloads the full CUDA-enabled
+  # PyTorch stack (~5 GB) plus Qwen3-0.6B, builds the real index and runs the
+  # whole pipeline once. Too heavy to run on every push.
+  end-to-end:
+    name: Full pipeline (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.x"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Fetch the vLLM corpus (not versioned in the repo)
+        run: |
+          mkdir -p data/raw
+          curl -sSL https://github.com/vllm-project/vllm/archive/refs/tags/v0.10.1.tar.gz | tar -xz -C data/raw
+          test -d data/raw/vllm-0.10.1
+
+      - name: Build the index and evaluate retrieval
+        run: |
+          uv run python -m src index --max_chunk_size 2000 --method bm25
+          uv run python -m src search_dataset \
+            --dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json \
+            --k 10 \
+            --save_directory data/output/search_results
+          uv run python -m src evaluate \
+            --student_search_results_path data/output/search_results/dataset_docs_public.json \
+            --dataset_path data/datasets/AnsweredQuestions/dataset_docs_public.json
+
+      - name: Generate one grounded answer (downloads Qwen3-0.6B)
+        run: >
+          uv run python -m src answer
+          "How to dynamically load a LoRA adapter?" --k 3

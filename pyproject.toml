@@ -1,7 +1,7 @@
 [project]
 name = "rag"
 version = "0.1.0"
-description = "Add your description here"
+description = "Retrieval-Augmented Generation over the vLLM codebase: AST-aware chunking, TF-IDF/BM25 retrieval and Qwen3-0.6B grounded answers."
 readme = "README.md"
 authors = [
     { name = "yassabda", email = "yassabda@student.42.fr" }

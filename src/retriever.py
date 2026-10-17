@@ -4,6 +4,7 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Any
 from sklearn.metrics.pairwise import cosine_similarity
+from src.indexer import tokenize_for_bm25
 from src.models import (
     MinimalSource,
     MinimalSearchResults,
@@ -33,7 +34,7 @@ def _search_in_index(
         question_vector = data["vectorizer"].transform([question])
         scores = cosine_similarity(question_vector, data["matrix"]).ravel()
     else:
-        tokenized_question = question.lower().split()
+        tokenized_question = tokenize_for_bm25(question)
         scores = data["bm25"].get_scores(tokenized_question)
     top_k = scores.argsort()[::-1][:k]
     return [data["corpus_sources"][i] for i in top_k]
