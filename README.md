@@ -120,8 +120,3 @@ end-to-end on the real corpus, including one Qwen3 answer.
   recall@5 on docs, no gain on code, ~5 s/query on CPU — worth revisiting once GPU/serving is set up.
 - **Answer evaluation**: measure faithfulness / answer correctness (not only retrieval recall).
 - **Serving**: wrap the pipeline in a FastAPI service and ship it with Docker.
-
-## Documentation
-
-- [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md) — detailed 42 report: full architecture,
-  chunking/retrieval rationale, design decisions, challenges and **AI-usage disclosure**.
